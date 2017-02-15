@@ -46,9 +46,6 @@ game_to_predict <- cbind(sample_submission$id,
 
 #合并常规赛和竞标赛数据 (compact)
 
-temp <- merge(RegularSeasonCompactResults,TourneyCompactResults,by ="Season")
-
-
 temp <- left_join(game_to_predict,
                   TourneySeeds, 
                   by=c("season"="Season", "team1"="Team"))
