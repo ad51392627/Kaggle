@@ -62,9 +62,7 @@ game_to_predict <- game_to_predict %>%
 
 #训练集
 
-#锦标赛数据（seed 模型）
-
-
+#锦标赛数据（seed Diff模型）
 training_data = left_join(TourneyCompactResults,
                           TourneySeeds,
                           by = c("Season" = "Season", "Wteam" = "Team"))
@@ -95,6 +93,14 @@ splits <- createDataPartition(training_data$result, p=0.84) #80% train, 50% test
 train <- training_data[splits$Resample1,]
 test <- training_data[-splits$Resample1,]
 
+#锦标赛数据
+
+
+
+
+
+
+
 #modelling using h2o deeplearning
 
 library(h2o)
@@ -105,9 +111,9 @@ test_h2o <- as.h2o(test, destination_frame = "test")
 
 h2o_grid_search <- h2o.grid("deeplearning", 
                             grid_id = 'h2orm',
-                            y = which((names(bank_data_h2o_train_over) == "default")),
-                            x = which(!(names(bank_data_h2o_train_over) == "default")),
-                            training_frame = bank_data_h2o_train_over,
+                            y = which((names(train_h2o) == "result")),
+                            x = which(!(names(train_h2o) == "result")),
+                            training_frame = train_h2o,
                             nfolds = 10,
                             score_each_iteration = T,
                             overwrite_with_best_model = T,
@@ -119,7 +125,7 @@ h2o_grid_search <- h2o.grid("deeplearning",
                             stopping_tolerance = 1e-3,
                             shuffle_training_data = T,
                             hyper_params = list(hidden = c(c(200,200),c(64,64,64),c(512),c(32,32,32,32,32)),
-                                                input_dropout_ratio = c(0.2,0.5), 
+                                                input_dropout_ratio = c(0.2,0.5,0.7), 
                                                 l1 = c(1e-4,1e-3),
                                                 l2 = c(1e-4,1e-3))
 )
@@ -142,14 +148,14 @@ model_1 <- h2o.deeplearning(
   overwrite_with_best_model = T,
   standardize = T,
   activation = 'RectifierWithDropout',
-  epochs = 20,
+  epochs = 30,
   stopping_rounds = 5,
   stopping_metric = 'logloss',
   stopping_tolerance = 1e-3,
   shuffle_training_data = T,
-  hidden = c(200,200),
+  hidden = c(200,200,200),
   input_dropout_ratio = 0.5,
-  hidden_dropout_ratios = c(0.5,0.5),
+  hidden_dropout_ratios = c(0.5,0.5,0.3),
   l1 = 1e-3,
   l2 = 1e-3)
 
@@ -171,9 +177,9 @@ model_2 <- h2o.deeplearning(
   shuffle_training_data = T,
   hidden = c(64,64,64),
   input_dropout_ratio = 0.5, 
-  hidden_dropout_ratios = c(0.5,0.5,0.5),
-  l1 = 1e-2,
-  l2 = 1e-2)
+  hidden_dropout_ratios = c(0.5,0.3,0.3),
+  l1 = 1e-3,
+  l2 = 1e-3)
 
 model_3 <- h2o.deeplearning(
   model_id = 'no_3',
@@ -198,10 +204,22 @@ model_3 <- h2o.deeplearning(
   l2 = 1e-2)
 
 perf_model_1 <- h2o.performance(model_1, test_h2o)
+
+#random forest
+
+model_2 <- h2o.randomForest(y = which((names(train_h2o) == "result")),
+                            x = which(!(names(train_h2o) == "result")),
+                            training_frame = train_h2o,
+                            nfolds = 10,
+                            ntrees = 1000,
+                            max_depth = 20,
+                            mtries = 1)
+
+
 perf_model_2 <- h2o.performance(model_2, test_h2o)
 perf_model_3 <- h2o.performance(model_3, test_h2o)
 
-pred = h2o.predict(model_1,test_h2o)[1]
+pred = h2o.predict(model_1,test_h2o, type = 'prob')
 
 table(bank_data_h2o_test$default,pred)
 
