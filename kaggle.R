@@ -1,4 +1,4 @@
-#Kaggle, tidy data
+﻿#Kaggle, tidy data
 
 rm(list = ls())
 library(rpart)
@@ -61,14 +61,14 @@ colnames(games_to_predict)[c(1,5:8)] <- c("id", "team1seed",'team1region',"team2
 
 #join compact result
 
-compact_result <- rbind(RegularSeasonCompactResults,TourneyCompactResults)
+#compact_result <- rbind(RegularSeasonCompactResults,TourneyCompactResults)
 
-compact_result <- compact_result[order(compact_result$Season,compact_result$Daynum),]
+#compact_result <- compact_result[order(compact_result$Season,compact_result$Daynum),]
 
 #join detailed result
 
-detailed_result <- rbind(RegularSeasonDetailedResults,TourneyDetailedResults)
-detailed_result <- detailed_result[order(detailed_result$Season,detailed_result$Daynum),]
+#detailed_result <- rbind(RegularSeasonDetailedResults,TourneyDetailedResults)
+#detailed_result <- detailed_result[order(detailed_result$Season,detailed_result$Daynum),]
 
 
 
