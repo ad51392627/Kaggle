@@ -1,4 +1,4 @@
-﻿#Kaggle, tidy data
+#Kaggle, tidy data
 
 rm(list = ls())
 library(rpart)
@@ -90,4 +90,6 @@ H
 
 
 Svm()adfskjghjkdgkl
+
+sadfjalksdfjlkasdjflk
 
