@@ -77,4 +77,17 @@ detailed_result <- detailed_result[order(detailed_result$Season,detailed_result$
 #          TourneySeeds, 
 #          by=c("Season", "Wteam"="Team"))
 
+lkasfdlkjaklf
+
+Ga
+Fg
+Sdg
+S
+Gs
+Dfh
+Sd
+H
+
+
+Svm()adfskjghjkdgkl
 
