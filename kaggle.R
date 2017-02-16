@@ -67,8 +67,8 @@ compact_result <- compact_result[order(compact_result$Season,compact_result$Dayn
 
 #join detailed result
 
-detailed_result <- rbind(RegularSeasonDetailedResults,TourneyDetailedResults)
-detailed_result <- detailed_result[order(detailed_result$Season,detailed_result$Daynum),]
+#detailed_result <- rbind(RegularSeasonDetailedResults,TourneyDetailedResults)
+#detailed_result <- detailed_result[order(detailed_result$Season,detailed_result$Daynum),]
 
 
 
