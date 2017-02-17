@@ -1,0 +1,181 @@
+---
+title: "Kaggle Machine Learning"
+author: "Cheng Xue"
+date: "17/02/2017"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+#Kaggle load data
+
+```{r,message=FALSE}
+rm(list = ls())
+library(rpart)
+library(readr)
+library(knitr)
+library(rpart.plot)
+library(dplyr)
+library(randomForest)
+library(party)
+library(caret)
+library(cluster)
+library(purrr)
+library(tidyr)
+library(e1071)
+library(modelr)
+library(ROSE)
+library(nnet)
+library(ROCR)
+library(reshape2)
+data_path <- "~/Github/Kaggle/Data"
+RegularSeasonCompactResults <- read.csv(file.path(data_path,'RegularSeasonCompactResults.csv'))
+RegularSeasonDetailedResults <- read.csv(file.path(data_path,'RegularSeasonDetailedResults.csv'))
+Seasons <- read.csv(file.path(data_path,'Seasons.csv'))
+TourneyCompactResults <- read.csv(file.path(data_path,'TourneyCompactResults.csv'))
+TourneyDetailedResults <- read.csv(file.path(data_path,'TourneyDetailedResults.csv'))
+TourneySeeds <- read.csv(file.path(data_path,'TourneySeeds.csv'))
+TourneySlots <- read.csv(file.path(data_path,'TourneySlots.csv'))
+sample_submission <- read.csv(file.path(data_path,'sample_submission.csv'))
+```
+
+#找到$$S^H_x$$
+
+$$logit(S^H_x) = ax+b$$
+去除无关列
+
+```{r}
+RegularSeasonCompactResults <- RegularSeasonCompactResults %>% select(-Numot,-Daynum)
+```
+
+
+只使用有AH的数据就行回归
+
+```{r}
+RegularSeasonCompactResults <- RegularSeasonCompactResults[which(RegularSeasonCompactResults$Wloc == "A" |RegularSeasonCompactResults$Wloc == "H"),]
+```
+
+
+首先在常规赛上的数据建立分差列 (主场球队得分减去客场球队得分)
+```{r}
+RegularSeasonCompactResults <- RegularSeasonCompactResults %>%
+  mutate(PointDiff = ifelse(Wloc == "H", Wscore - Lscore, Lscore - Wscore))
+```
+
+#建立S^H_x列
+
+建立home和away的分列
+```{r}
+RegularSeasonCompactResults <- RegularSeasonCompactResults %>%
+  mutate(home = ifelse(Wloc == "A", Lteam, Wteam),
+         away = ifelse(Wloc == "A", Wteam, Lteam)
+         )
+```
+
+
+建立下个客场是否胜利的分列
+
+```{r, include=FALSE}
+did_home_team_win_next_away_game = c()
+for (i in seq(dim(RegularSeasonCompactResults)[1])) {
+  
+  #主场球队和客场球队的下一场比赛(客队的主场， 比赛中有一方是i的主队)
+  #首先检查是否后续有比赛 (条件：i行的客场是这一行的主场， 并且输赢球队中有一个是i行的主场球队)
+      if (is.na(RegularSeasonCompactResults[i+
+         which(RegularSeasonCompactResults$home[-(1:i)] == RegularSeasonCompactResults$away[i] &
+         (
+         RegularSeasonCompactResults$Wteam[-(1:i)] == RegularSeasonCompactResults$home[i] |
+         RegularSeasonCompactResults$Lteam[-(1:i)] == RegularSeasonCompactResults$home[i]
+         ))
+         ,][1,]$Wloc))
+        
+        {
+         did_home_team_win_next_away_game = append(did_home_team_win_next_away_game,NA)
+         }
+      #如果不是na， 就是说有后面有比赛满足条件
+      else{
+        #如果返回的第一个值， 也就是最近的比赛
+        #取最近客队主场的Wloc， 如果返回H,代表这次上次的客队在这次的主场取得了胜利
+        #反之，则上次输的客队又输了， ith行记录 1
+        if(RegularSeasonCompactResults[i+
+         which(RegularSeasonCompactResults$home[-(1:i)] == RegularSeasonCompactResults$away[i] &
+         (
+         RegularSeasonCompactResults$Wteam[-(1:i)] == RegularSeasonCompactResults$home[i] |
+         RegularSeasonCompactResults$Lteam[-(1:i)] == RegularSeasonCompactResults$home[i]
+         ))
+         ,][1,]$Wloc == "H") {
+         did_home_team_win_next_away_game = append(did_home_team_win_next_away_game,0)
+       }
+        else {
+        did_home_team_win_next_away_game = append(did_home_team_win_next_away_game,1)
+      }
+      }
+  cat("processed " ,i ," iteration.", "\n")
+    }
+```
+
+合并到regularseason里
+
+```{r}
+
+RegularSeasonCompactResults[,'did_home_team_win_next_away_game'] = did_home_team_win_next_away_game
+
+```
+
+去除na值
+```{r}
+RegularSeasonCompactResults <- RegularSeasonCompactResults[which(!is.na(RegularSeasonCompactResults$did_home_team_win_next_away_game)),]
+```
+
+看看图
+主场球队的比分差距
+```{r}
+hist(x = RegularSeasonCompactResults$PointDiff,col = 'green', breaks = 500)
+```
+
+主场的平均分差与标准差
+
+```{r}
+meanDiff_home = mean(RegularSeasonCompactResults$PointDiff)
+stdDiff_home = sd(RegularSeasonCompactResults$PointDiff)
+```
+
+分差与下一场赢的概率的关系
+
+```{r}
+min = min(RegularSeasonCompactResults$PointDiff)
+max = max(max(RegularSeasonCompactResults$PointDiff))
+
+prob = c()
+
+for (i in seq(min,max)) {
+  prob = append(prob,
+                sum(RegularSeasonCompactResults[which(RegularSeasonCompactResults$PointDiff == i),]$did_home_team_win_next_away_game) / length(RegularSeasonCompactResults[which(RegularSeasonCompactResults$PointDiff == i),]$did_home_team_win_next_away_game))
+}
+
+plot(seq(min,max), prob)
+
+```
+
+使用logstic回归来取得S^H_x的值
+
+```{r}
+logstic_model <- glm(did_home_team_win_next_away_game ~ PointDiff, family = 'binomial', data = RegularSeasonCompactResults)
+
+predict_data <- as.data.frame(seq(min,max),ncol = 1)
+
+colnames(predict_data)[1] = "PointDiff"
+
+prob_predict <- predict(logstic_model,predict_data,type = 'response')
+
+plot(seq(min,max),prob_predict)
+```
+
+
+#假设R^H_x = S^H_x+h
+
+```{r}
+
+```
