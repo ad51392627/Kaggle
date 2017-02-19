@@ -224,8 +224,10 @@ m_table <- m_table %>% mutate(m_value = pnorm((sqrt(2*tao^2/(sigma_1^2+2*tao^2))
 Markov Chain
 
 ```{r, include=FALSE}
-transition_matrix_z = data.frame(matrix(nrow = dim(Teams),ncol=dim(Teams)))
-transition_matrix_m = data.frame(matrix(nrow = dim(Teams),ncol=dim(Teams)))
+transition_matrix_z = data.frame(matrix(nrow = dim(Teams),ncol=dim(Teams)),row.names = Teams$Team_Id)
+colnames(transition_matrix_z) = Teams$Team_Id
+transition_matrix_m = data.frame(matrix(nrow = dim(Teams),ncol=dim(Teams)),row.names = Teams$Team_Id)
+colnames(transition_matrix_z) = Teams$Team_Id
 
 for (i in seq(dim(Teams)[1])) {
   
