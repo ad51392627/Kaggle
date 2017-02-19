@@ -39,6 +39,7 @@ TourneyDetailedResults <- read.csv(file.path(data_path,'TourneyDetailedResults.c
 TourneySeeds <- read.csv(file.path(data_path,'TourneySeeds.csv'))
 TourneySlots <- read.csv(file.path(data_path,'TourneySlots.csv'))
 sample_submission <- read.csv(file.path(data_path,'sample_submission.csv'))
+Teams <- read.csv(file.path(data_path,'Teams.csv'))
 ```
 
 #找到$$S^H_x$$
@@ -159,10 +160,12 @@ plot(seq(min,max), prob)
 
 ```
 
-使用logstic回归来取得S^H_x的值
+使random forest回归来取得S^H_x的值
 
 ```{r}
-logstic_model <- glm(did_home_team_win_next_away_game ~ PointDiff, family = 'binomial', data = RegularSeasonCompactResults)
+logstic_model <- glm(did_home_team_win_next_away_game ~ PointDiff,
+                     family = 'binomial', 
+                     data = RegularSeasonCompactResults)
 
 predict_data <- as.data.frame(seq(min,max),ncol = 1)
 
@@ -173,9 +176,214 @@ prob_predict <- predict(logstic_model,predict_data,type = 'response')
 plot(seq(min,max),prob_predict)
 ```
 
-
-#假设R^H_x = S^H_x+h
+S^H_x+h 的50%值
 
 ```{r}
+S_H_x = as.data.frame(prob_predict,row.names = as.character(round(seq(min,max))))
 
 ```
+
+I got the 50% for home team is around 16.5 points
+
+To estimate \tao, I use the equation 9 as in the imporved lrmc report.
+
+```{r}
+sigma_1 = 11
+home_adv = 4
+x = 16.5
+
+f <- function(tao) (pnorm((((x/sigma_1)*(2*tao^2)/sqrt((sigma_1^2 +2*tao^2)*(sigma_1^2 +4*tao^2)))-(home_adv/sigma_1)*(sqrt((sigma_1^2+4*tao^2)/(sigma_1^2+2*tao^2)))))-0.5)
+
+tao = uniroot(f, lower=0.1, upper=100000000)$root
+
+```
+
+I found Tao is 5.33, slightly great tha the report 4.26
+
+
+```{r}
+R_H_x = as.data.frame(prob_predict,row.names = as.character(round(seq(min,max) - meanDiff_home)))
+```
+
+#生成Pr(Z>0|X=x) 和 Pr (M>0 |X=x)
+
+z table and m table
+
+```{r}
+#z table
+
+z_table <- data.frame(seq(min,max))
+m_table <- data.frame(seq(min,max))
+colnames(z_table) = 'x'
+colnames(m_table) = 'x'
+z_table <- z_table %>% mutate(z_value = pnorm((2*tao^2/(sqrt((sigma_1^2+2*tao^2)*(sigma_1^2+4*tao^2))))*((x-home_adv)/sigma_1)))
+m_table <- m_table %>% mutate(m_value = pnorm((sqrt(2*tao^2/(sigma_1^2+2*tao^2))*(x-home_adv)/sigma_1)))
+
+```
+
+Markov Chain
+
+```{r, include=FALSE}
+transition_matrix_z = data.frame(matrix(nrow = dim(Teams),ncol=dim(Teams)))
+transition_matrix_m = data.frame(matrix(nrow = dim(Teams),ncol=dim(Teams)))
+
+for (i in seq(dim(Teams)[1])) {
+  
+  total_number_of_games_played_by_i = dim(RegularSeasonCompactResults[
+                                    which(RegularSeasonCompactResults$home == Teams$Team_Id[i] |
+                                          RegularSeasonCompactResults$away == Teams$Team_Id[i]),])[1]
+  
+  for (j in seq(dim(Teams)[1])) {
+    
+    if (i != j) {
+      if (dim(RegularSeasonCompactResults[which(RegularSeasonCompactResults$away == Teams$Team_Id[i] &
+                                                RegularSeasonCompactResults$home == Teams$Team_Id[j]),])[1]!=0) {
+         
+          #set last 4 games with 200% weight
+        
+          total_away_games = dim(RegularSeasonCompactResults[which(RegularSeasonCompactResults$away == Teams$Team_Id[i] &
+                                                RegularSeasonCompactResults$home == Teams$Team_Id[j]),])[1]
+          
+          away <-  data.frame(seq(total_away_games))    
+          away <- away %>% mutate(a = rep(1,length(total_away_games)), b = rep(1,length(total_away_games)))
+          colnames(away) = c('weights','z_value','m_value') 
+          
+          if (length(away$weights)>4){
+          away$weights[-c(seq(length(away$weights)-4))] = 2
+          #average the additional 800% weight over other obs
+          away$weights[(seq(length(away$weights)-4))] = (total_away_games-8) / (length(away$weights)-4)
+          }
+          for (k in seq(total_away_games)) {
+            
+            away$z_value[k] <- z_table$z_value[which(z_table$x == RegularSeasonCompactResults[which(RegularSeasonCompactResults$away == Teams$Team_Id[i] &
+                                                RegularSeasonCompactResults$home == Teams$Team_Id[j]),]$PointDiff[k])]
+            
+            away$m_value[k] <- m_table$m_value[which(m_table$x == RegularSeasonCompactResults[which(RegularSeasonCompactResults$away == Teams$Team_Id[i] &
+                                                RegularSeasonCompactResults$home == Teams$Team_Id[j]),]$PointDiff[k])]
+            
+          
+          }
+          away <- away %>% mutate(weighted_z_value = weights * z_value,
+                                  weighted_m_value = weights *m_value)
+      }
+      
+#################################home
+      if (dim(RegularSeasonCompactResults[which(RegularSeasonCompactResults$home == Teams$Team_Id[i] &
+                                                RegularSeasonCompactResults$away == Teams$Team_Id[j]),])[1]!=0)
+        
+        {          
+        
+        total_home_games = dim(RegularSeasonCompactResults[which(RegularSeasonCompactResults$home == Teams$Team_Id[i] &
+                                                RegularSeasonCompactResults$away == Teams$Team_Id[j]),])[1]
+          
+          home <-  data.frame(seq(total_home_games))    
+          home <- home %>% mutate(a = rep(1,length(total_home_games)), b = rep(1,length(total_home_games)))
+          colnames(home) = c('weights','z_value','m_value')
+          
+          if (length(home$weights)>4){
+          
+          home$weights[-c(seq(length(home$weights)-4))] = 2
+          #average the additional 800% weight over other obs
+          home$weights[(seq(length(home$weights)-4))] = (total_home_games-8) / (length(home$weights)-4)
+          }
+          for (k in seq(total_home_games)) {
+            
+            home$z_value[k] <- 1 - z_table$z_value[which(z_table$x == RegularSeasonCompactResults[which(RegularSeasonCompactResults$home == Teams$Team_Id[i] &
+                                                RegularSeasonCompactResults$away == Teams$Team_Id[j]),]$PointDiff[k])]
+            home$m_value[k] <- 1 - m_table$m_value[which(m_table$x == RegularSeasonCompactResults[which(RegularSeasonCompactResults$home == Teams$Team_Id[i] &
+                                                RegularSeasonCompactResults$away == Teams$Team_Id[j]),]$PointDiff[k])]
+          }
+          
+          home <- home %>% mutate(weighted_z_value = weights * z_value,
+                                  weighted_m_value = weights * m_value)
+          
+          transition_matrix_z[i,j] <- (1/total_number_of_games_played_by_i) *
+                                 (sum(away$weighted_z_value) +
+                                  sum(home$weighted_z_value))
+
+                                  
+          transition_matrix_m[i,j] <- (1/total_number_of_games_played_by_i) *
+                                 (sum(away$weighted_m_value) +
+                                  sum(home$weighted_m_value))          
+      }
+          
+
+
+
+    }
+    
+    else {
+      
+      
+      if (dim(RegularSeasonCompactResults[which(RegularSeasonCompactResults$away == Teams$Team_Id[i]),])[1]!=0) {
+         
+          #set last 4 games with 200% weight
+        
+          total_away_games = dim(RegularSeasonCompactResults[which(RegularSeasonCompactResults$away == Teams$Team_Id[i]),])[1]
+          
+          away <-  data.frame(seq(total_away_games))    
+          away <- away %>% mutate(a = rep(1,length(total_away_games)), b = rep(1,length(total_away_games)))
+          colnames(away) = c('weights','z_value','m_value') 
+          if (length(away$weights)>4){
+          away$weights[-c(seq(length(away$weights)-4))] = 2
+          #average the additional 800% weight over other obs
+          away$weights[(seq(length(away$weights)-4))] = (total_away_games-8) / (length(away$weights)-4)
+          }       
+          for (k in seq(total_away_games)) {
+            
+            away$z_value[k] <- z_table$z_value[which(z_table$x == RegularSeasonCompactResults[which(RegularSeasonCompactResults$away == Teams$Team_Id[i]),]$PointDiff[k])]
+            
+            away$m_value[k] <- m_table$m_value[which(m_table$x == RegularSeasonCompactResults[which(RegularSeasonCompactResults$away == Teams$Team_Id[i]),]$PointDiff[k])]
+            
+          }
+          
+          away <- away %>% mutate(weighted_z_value = weights * z_value,
+                                  weighted_m_value = weights * m_value)
+      }
+#################################home
+      if (dim(RegularSeasonCompactResults[which(RegularSeasonCompactResults$home == Teams$Team_Id[i]),])[1]!=0) {
+         
+          #set last 4 games with 200% weight
+        
+          total_home_games = dim(RegularSeasonCompactResults[which(RegularSeasonCompactResults$home == Teams$Team_Id[i]),])[1]
+          
+          home <-  data.frame(seq(total_home_games))    
+          home <- home %>% mutate(a = rep(1,length(total_home_games)), b = rep(1,length(total_home_games)))
+          colnames(home) = c('weights','z_value','m_value') 
+          if (length(home$weights)>4){
+          
+          home$weights[-c(seq(length(home$weights)-4))] = 2
+          #average the additional 800% weight over other obs
+          home$weights[(seq(length(home$weights)-4))] = (total_home_games-8) / (length(home$weights)-4)
+          }       
+          for (k in seq(total_home_games)) {
+            
+            home$z_value[k] <- z_table$z_value[which(z_table$x == RegularSeasonCompactResults[which(RegularSeasonCompactResults$home == Teams$Team_Id[i]),]$PointDiff[k])]
+            
+            home$m_value[k] <- m_table$m_value[which(m_table$x == RegularSeasonCompactResults[which(RegularSeasonCompactResults$home == Teams$Team_Id[i]),]$PointDiff[k])]
+            
+          }
+          
+          home <- home %>% mutate(weighted_z_value = weights * z_value,
+                                  weighted_m_value = weights * m_value)
+          
+          transition_matrix_z[i,j] <- (1/total_number_of_games_played_by_i) *
+                                 (sum(away$weighted_z_value) +
+                                  sum(home$weighted_z_value))
+
+                                  
+          transition_matrix_m[i,j] <- (1/total_number_of_games_played_by_i) *
+                                 (sum(away$weighted_m_value) +
+                                  sum(home$weighted_m_value))          
+      }
+          
+
+
+      
+      
+      }
+  }
+  cat(i," team done",'\n')
+}
+```
+
