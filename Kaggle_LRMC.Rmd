@@ -227,7 +227,7 @@ Markov Chain
 transition_matrix_z = data.frame(matrix(nrow = dim(Teams),ncol=dim(Teams)),row.names = Teams$Team_Id)
 colnames(transition_matrix_z) = Teams$Team_Id
 transition_matrix_m = data.frame(matrix(nrow = dim(Teams),ncol=dim(Teams)),row.names = Teams$Team_Id)
-colnames(transition_matrix_z) = Teams$Team_Id
+colnames(transition_matrix_m) = Teams$Team_Id
 
 for (i in seq(dim(Teams)[1])) {
   
@@ -385,7 +385,7 @@ for (i in seq(dim(Teams)[1])) {
       
       }
   }
-  cat(i," team done",'\n')
+  cat('Team:',paste(Teams$Team_Name[[i]], "processed"),'\n')
 }
 ```
 
